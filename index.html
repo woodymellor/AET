@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AET Overtime Tracker</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#2f81f7;--good:#3fb950;--warn:#d29922;--bad:#f85149}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:980px;margin:auto;padding:20px}h1{margin:0 0 4px;font-size:26px}.sub{color:var(--muted);margin:0 0 20px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}.label{color:var(--muted);font-size:13px}.big{font-size:28px;font-weight:700;margin-top:4px}.bar{height:10px;background:#21262d;border-radius:10px;overflow:hidden;margin:14px 0 22px}.bar>div{height:100%;background:var(--accent)}.section{margin-top:20px}form,.settings{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:end}label{font-size:13px;color:var(--muted);display:block}input,select,button{width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0d1117;color:var(--text);font:inherit}button{cursor:pointer;background:#21262d}button.primary{background:var(--accent);border-color:var(--accent);font-weight:600}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);white-space:nowrap}th{color:var(--muted);font-size:13px}.del{width:auto;padding:6px 9px}.good{color:var(--good)}.bad{color:var(--bad)}.note{color:var(--muted);font-size:13px;margin-top:8px}.monthrow{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.monthrow>div{min-width:180px}.monthrow button{width:auto}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.settings,form{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}.big{font-size:24px}}
+</style>
+</head>
+<body><main class="wrap">
+<h1>AET Overtime Tracker</h1>
+<p class="sub">Track overtime by UC assessment period and see how much extra work is still needed.</p>
+<div class="monthrow"><div><label>Assessment period<select id="period"></select></label></div><button id="newPeriod">New period</button></div>
+<section class="grid section">
+<div class="card"><div class="label">Estimated AET earnings</div><div class="big" id="earnings"></div><div id="status"></div></div>
+<div class="card"><div class="label">Overtime worked</div><div class="big" id="worked"></div><div class="label" id="extraPay"></div></div>
+<div class="card"><div class="label">Still needed at 1×</div><div class="big" id="needed"></div><div class="label" id="gap"></div></div>
+</section>
+<div class="bar"><div id="progress"></div></div>
+<section class="card"><strong>Period settings</strong><div class="settings" style="margin-top:10px">
+<label>AET (£)<input id="aet" type="number" min="0" step=".01"></label>
+<label>Baseline (£)<input id="baseline" type="number" min="0" step=".01"></label>
+<label>Normal hourly rate (£)<input id="rate" type="number" min=".01" step=".01"></label>
+<label>Start date<input id="start" type="date"></label>
+<label>End date<input id="end" type="date"></label>
+</div><div class="note">Baseline defaults to £942.27 (the current conservative estimate after Cycle to Work). Settings are saved separately for each period.</div></section>
+<section class="card section"><strong>Add overtime</strong>
+<form id="addForm" style="margin-top:10px">
+<label>Date<input id="date" type="date" required></label>
+<label>Hours<input id="hours" type="number" min="0" max="24" step="1" value="0"></label>
+<label>Minutes<input id="minutes" type="number" min="0" max="59" step="1" value="30"></label>
+<label>Rate<select id="mult"><option value="1">1× normal</option><option value="1.5">1.5× normal</option></select></label>
+<button class="primary" type="submit">Add</button>
+</form><div id="message" class="note" aria-live="polite"></div></section>
+<section class="section"><div class="actions"><button id="exportJson">Export JSON backup</button><button id="exportCsv">Export CSV</button><button id="importJson">Import JSON backup</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
+<div class="note">JSON is the full restorable backup. CSV is included for spreadsheets and easy inspection.</div>
+<div class="tablewrap"><table><thead><tr><th>Date</th><th>Time</th><th>Rate</th><th>Pay</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</main>
+<script>
+const KEY='aet-overtime-tracker-v1';
+const seed={active:'2026-09-26',periods:{'2026-09-26':{start:'2026-09-26',end:'2026-10-25',aet:991,baseline:942.27,rate:15.98,entries:[{id:1,date:'2026-09-25',minutes:30,multiplier:1,note:'Paid in October payroll'},{id:2,date:'2026-10-03',minutes:60,multiplier:1,note:''}]}}};
+let data=load();
+function load(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&x.periods)return x}catch(e){}return structuredClone(seed)}
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+const $=id=>document.getElementById(id);
+const cash=n=>'£'+Number(n).toFixed(2);
+const dur=m=>{m=Math.max(0,Math.round(m));let h=Math.floor(m/60),r=m%60;return h?(h+'h '+(r?r+'m':'')):(r+'m')};
+function p(){return data.periods[data.active]}
+function syncSelect(){const s=$('period');s.innerHTML='';Object.keys(data.periods).sort().reverse().forEach(k=>{const x=data.periods[k],o=document.createElement('option');o.value=k;o.textContent=x.start+' → '+x.end;o.selected=k===data.active;s.appendChild(o)})}
+function render(){syncSelect();const x=p();$('aet').value=x.aet;$('baseline').value=x.baseline;$('rate').value=x.rate;$('start').value=x.start;$('end').value=x.end;
+let mins=0,pay=0;x.entries.forEach(e=>{mins+=e.minutes;pay+=e.minutes/60*x.rate*e.multiplier});const total=x.baseline+pay,gap=Math.max(0,x.aet-total),need=Math.ceil(gap/x.rate*60),pct=x.aet?Math.min(100,total/x.aet*100):100;
+$('earnings').textContent=cash(total);$('worked').textContent=dur(mins);$('extraPay').textContent=cash(pay)+' overtime pay';$('needed').textContent=gap?dur(need):'None';$('gap').textContent=gap?cash(gap)+' short':'AET reached';$('status').textContent=gap?'Below target':'At/above target';$('status').className=gap?'bad':'good';$('progress').style.width=pct+'%';
+const body=$('rows');body.innerHTML='';[...x.entries].sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{const tr=document.createElement('tr');tr.innerHTML='<td>'+e.date+'</td><td>'+dur(e.minutes)+'</td><td>'+e.multiplier+'×</td><td>'+cash(e.minutes/60*x.rate*e.multiplier)+'</td><td><button class="del" data-id="'+e.id+'">Delete</button></td>';body.appendChild(tr)});body.querySelectorAll('.del').forEach(b=>b.onclick=()=>{x.entries=x.entries.filter(e=>e.id!==Number(b.dataset.id));save();render()})}
+$('period').onchange=e=>{data.active=e.target.value;save();render()};
+['aet','baseline','rate','start','end'].forEach(id=>$(id).onchange=()=>{let x=p();x[id]=['aet','baseline','rate'].includes(id)?Math.max(0,Number($(id).value)||0):$(id).value;save();render()});
+$('addForm').onsubmit=e=>{e.preventDefault();const h=Math.max(0,Math.min(24,Math.floor(Number($('hours').value)||0))),m=Math.max(0,Math.min(59,Math.floor(Number($('minutes').value)||0))),mins=h*60+m;if(!mins||!$('date').value){$('message').textContent='Enter a date and some overtime.';return}p().entries.push({id:Date.now(),date:$('date').value,minutes:mins,multiplier:Number($('mult').value),note:''});save();$('message').textContent='Saved.';$('hours').value=0;$('minutes').value=30;render()};
+$('newPeriod').onclick=()=>{const start=prompt('Assessment period start date (YYYY-MM-DD):');if(!/^\d{4}-\d{2}-\d{2}$/.test(start||''))return;const end=prompt('Assessment period end date (YYYY-MM-DD):');if(!/^\d{4}-\d{2}-\d{2}$/.test(end||''))return;data.periods[start]={start,end,aet:p().aet,baseline:p().baseline,rate:p().rate,entries:[]};data.active=start;save();render()};
+function download(name,type,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+$('exportJson').onclick=()=>download('aet-overtime-backup.json','application/json',JSON.stringify(data,null,2));
+$('exportCsv').onclick=()=>{let rows=[['period_start','period_end','date','minutes','multiplier','hourly_rate','overtime_pay','aet','baseline']];Object.values(data.periods).forEach(x=>x.entries.forEach(e=>rows.push([x.start,x.end,e.date,e.minutes,e.multiplier,x.rate,(e.minutes/60*x.rate*e.multiplier).toFixed(2),x.aet,x.baseline])));download('aet-overtime.csv','text/csv',rows.map(r=>r.join(',')).join('\n'))};
+$('importJson').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.periods||!x.active||!x.periods[x.active])throw Error();data=x;save();render();alert('Backup imported.')}catch(err){alert('That does not appear to be a valid AET Tracker backup.')}e.target.value=''};
+render();
+</script>
+</body></html>
